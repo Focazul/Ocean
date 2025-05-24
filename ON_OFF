@@ -1,0 +1,22 @@
+Sub ON_OFF()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("VT") ' Altere para o nome da sua planilha
+    Dim col As Range
+    Dim todasOcultas As Boolean
+    todasOcultas = True ' Assume inicialmente que todas as colunas estão ocultas
+    
+    ' Verifica se alguma coluna entre D e M está visível
+    For Each col In ws.Range("D:M").Columns
+        If col.Hidden = False Then
+            todasOcultas = False
+            Exit For
+        End If
+    Next col
+    
+    ' Se todas as colunas estão ocultas, exibe-as; caso contrário, oculta-as
+    If todasOcultas Then
+        ws.Columns("D:M").EntireColumn.Hidden = False ' Exibe as colunas
+    Else
+        ws.Columns("D:M").EntireColumn.Hidden = True ' Oculta as colunas
+    End If
+End Sub
