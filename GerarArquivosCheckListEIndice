@@ -1,0 +1,270 @@
+Option Explicit
+
+' Configurações Globais
+Const CAMINHO_BASE As String = "C:\Users\baumc\OneDrive\Documentos\"
+Const PASTA_CONTRATACAO As String = "MARCELO\CONTRATAÇÃO\"
+Const PASTA_DESTINO As String = "MARCELO\CONTRATAÇÃO\CONTRATOS FEITOS\"
+Const NOME_PLANILHA As String = "CONTRATO"
+Const ARQUIVO_CHECKLIST As String = "CHECK LIST DEMITIDOS.xlsx"
+Const ARQUIVO_INDICE As String = "INDICE PASTA.xlsx"
+
+' Cache para siglas de loja
+Dim SiglasCache As Object
+
+' Sub GerarArquivosCheckListEIndice
+' Gera checklists de demitidos e atualiza índice pasta para linhas selecionadas.
+' Entrada: Tabela em NOME_PLANILHA com coluna 6 como checkbox.
+' Saída: Arquivos Excel em PASTA_DESTINO.
+Sub GerarArquivosCheckListEIndice()
+    On Error GoTo TratarErro
+    Dim ws As Worksheet
+    Dim tabela As ListObject
+    Dim linha As ListRow
+    Dim pastaDestinoCompleta As String
+    Dim nome As String
+    Dim loja As String
+    Dim siglaLoja As String
+    Dim indicePastaPath As String
+    Dim totalLinhas As Long
+    Dim contador As Long
+    Dim excelDocCheckList As Workbook
+    Dim excelDocIndice As Workbook
+    Dim primeiroNome As String
+
+    pastaDestinoCompleta = CAMINHO_BASE & PASTA_DESTINO
+    If Not GarantirPasta(pastaDestinoCompleta) Then Exit Sub
+
+    Set ws = ThisWorkbook.Sheets(NOME_PLANILHA)
+    Set tabela = ws.ListObjects(1)
+    totalLinhas = tabela.ListRows.Count
+    contador = 0
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    indicePastaPath = pastaDestinoCompleta & ARQUIVO_INDICE
+    If Dir(indicePastaPath) = "" Then Call CriarOuAbrirIndicePasta(indicePastaPath)
+    Set excelDocIndice = Workbooks.Open(indicePastaPath)
+
+    For Each linha In tabela.ListRows
+        If linha.Range(1, 6).Value Then
+            contador = contador + 1
+            Application.StatusBar = "Processando " & contador & " de " & totalLinhas & " linhas..."
+
+            nome = linha.Range(1, 1).Value
+            loja = linha.Range(1, 4).Value
+            siglaLoja = ObterSiglaLoja(loja)
+            If siglaLoja = "DESCONHECIDA" Then
+                ReportarErro "GerarArquivosCheckListEIndice", "Loja desconhecida: " & loja
+                GoTo ProximaLinha
+            End If
+
+            Dim caminhoArquivoCheckList As String
+            caminhoArquivoCheckList = CAMINHO_BASE & PASTA_CONTRATACAO & ARQUIVO_CHECKLIST
+            If Dir(caminhoArquivoCheckList) = "" Then
+                ReportarErro "GerarArquivosCheckListEIndice", "Arquivo " & ARQUIVO_CHECKLIST & " não encontrado: " & caminhoArquivoCheckList
+                GoTo ProximaLinha
+            End If
+
+            Set excelDocCheckList = Workbooks.Open(caminhoArquivoCheckList)
+            ProcessarCheckListDemitidos excelDocCheckList, nome
+            
+            primeiroNome = Split(nome, " ")(0)
+            Dim caminhoDestinoCheckList As String, baseNome As String, sufixo As Integer
+            baseNome = pastaDestinoCompleta & "CHECK LIST DEMITIDOS - " & primeiroNome
+            caminhoDestinoCheckList = baseNome & ".xlsx"
+            sufixo = 0
+            
+            ' Verificar se o arquivo já existe e adicionar sufixo incremental se necessário
+            While Dir(caminhoDestinoCheckList) <> ""
+                sufixo = sufixo + 1
+                caminhoDestinoCheckList = baseNome & " (" & sufixo & ").xlsx"
+            Wend
+            
+            If Dir(caminhoDestinoCheckList) <> "" Then ' Prompt apenas se ainda houver conflito (improvável com sufixo)
+                Dim resposta As VbMsgBoxResult
+                resposta = MsgBox("O arquivo '" & caminhoDestinoCheckList & "' já existe. Deseja substituí-lo?", _
+                                  vbYesNo + vbQuestion, "Arquivo Existente")
+                If resposta = vbNo Then
+                    excelDocCheckList.Close False
+                    Set excelDocCheckList = Nothing
+                    GoTo ProximaLinha
+                End If
+            End If
+            
+            excelDocCheckList.SaveAs caminhoDestinoCheckList
+            excelDocCheckList.Close False
+            Set excelDocCheckList = Nothing
+
+            Call AtualizarIndicePasta(excelDocIndice, nome, siglaLoja, contador)
+        End If
+ProximaLinha:
+    Next linha
+
+    excelDocIndice.Save
+    excelDocIndice.Close False
+    Set excelDocIndice = Nothing
+
+    Application.StatusBar = ""
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    MsgBox "Arquivos gerados com sucesso! (" & contador & " processados)", vbInformation
+    Exit Sub
+
+TratarErro:
+    Dim erroMsg As String
+    erroMsg = "Erro: " & Err.Description
+    ReportarErro "GerarArquivosCheckListEIndice", erroMsg
+    If Not excelDocCheckList Is Nothing Then excelDocCheckList.Close False: Set excelDocCheckList = Nothing
+    If Not excelDocIndice Is Nothing Then excelDocIndice.Close False: Set excelDocIndice = Nothing
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+End Sub
+
+' Funções Auxiliares
+Sub CriarOuAbrirIndicePasta(indicePastaPath As String)
+    Dim excelDoc As Workbook
+    Set excelDoc = Workbooks.Add
+    With excelDoc.Sheets(1)
+        .Cells(1, 2).Value = "INDICE PASTA"
+        .Cells(1, 2).Font.Bold = True
+    End With
+    excelDoc.SaveAs indicePastaPath
+    excelDoc.Close False
+End Sub
+
+Sub AtualizarIndicePasta(excelDocIndice As Workbook, nome As String, siglaLoja As String, contador As Long)
+    Dim ws As Worksheet
+    Dim celula As Range
+    Dim nomeExiste As Boolean
+    
+    Set ws = excelDocIndice.Sheets(1)
+    nomeExiste = False
+    For Each celula In ws.Range("A2:D" & ws.Cells(ws.Rows.Count, "A").End(xlUp).Row)
+        If celula.Value = nome And celula.Font.Bold Then
+            nomeExiste = True
+            Exit For
+        End If
+    Next celula
+    
+    If Not nomeExiste Then
+        Dim linhaEtiqueta As Long, colunaEtiqueta As Long
+        linhaEtiqueta = 2 + ((contador - 1) \ 2) * 2
+        colunaEtiqueta = IIf((contador - 1) Mod 2 = 0, 1, 3)
+
+        With ws
+            .Columns(colunaEtiqueta).ColumnWidth = 25
+            .Columns(colunaEtiqueta + 1).ColumnWidth = 25
+            .Rows(linhaEtiqueta).RowHeight = 31
+            .Rows(linhaEtiqueta + 1).RowHeight = 14
+
+            With .Cells(linhaEtiqueta, colunaEtiqueta)
+                .Value = nome
+                .Font.Bold = True
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+            End With
+            With .Cells(linhaEtiqueta, colunaEtiqueta + 1)
+                .Value = nome
+                .Font.Bold = True
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+            End With
+
+            With .Cells(linhaEtiqueta + 1, colunaEtiqueta)
+                .Value = siglaLoja
+                .Font.Bold = False
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+            End With
+            With .Cells(linhaEtiqueta + 1, colunaEtiqueta + 1)
+                .Value = siglaLoja
+                .Font.Bold = False
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+            End With
+
+            With .Range(.Cells(linhaEtiqueta, colunaEtiqueta), .Cells(linhaEtiqueta + 1, colunaEtiqueta + 1))
+                .WrapText = True
+                .Font.Name = "Calibri"
+                .Font.Size = 13
+                .Borders.LineStyle = xlContinuous
+            End With
+        End With
+    End If
+End Sub
+
+Sub ProcessarCheckListDemitidos(excelDoc As Workbook, nome As String)
+    On Error GoTo TratarErroExcel
+    Dim ws As Worksheet
+    Set ws = excelDoc.Sheets(1)
+    Dim conteudoAtual As String
+    conteudoAtual = ws.Range("B5").Value
+    If InStr(1, conteudoAtual, "«NOME»") > 0 Then
+        ws.Range("B5").Value = Replace(conteudoAtual, "«NOME»", UCase(nome))
+    Else
+        ws.Range("B5").Value = UCase(nome)
+        If conteudoAtual <> UCase(nome) Then
+            ReportarErro "ProcessarCheckListDemitidos", "Marcador «NOME» não encontrado em B5. Conteúdo original: " & conteudoAtual
+        End If
+    End If
+    Exit Sub
+TratarErroExcel:
+    ReportarErro "ProcessarCheckListDemitidos", "Erro ao processar " & ARQUIVO_CHECKLIST & ": " & Err.Description
+End Sub
+
+Function GarantirPasta(caminho As String) As Boolean
+    If Not FolderExists(caminho) Then
+        On Error Resume Next
+        MkDir caminho
+        If Err.Number <> 0 Then
+            ReportarErro "GarantirPasta", "Erro ao criar pasta: " & caminho
+            Exit Function
+        End If
+        On Error GoTo 0
+    End If
+    GarantirPasta = FolderExists(caminho)
+End Function
+
+Function FolderExists(folderPath As String) As Boolean
+    FolderExists = (Dir(folderPath, vbDirectory) <> "")
+End Function
+
+Function ObterSiglaLoja(loja As String) As String
+    If SiglasCache Is Nothing Then Set SiglasCache = CreateObject("Scripting.Dictionary")
+    If Not SiglasCache.Exists(loja) Then
+        Select Case loja
+            Case "QSC COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAC"
+            Case "BAD COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAD"
+            Case "BAS COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAS"
+            Case "WEST SIDE COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAU"
+            Case "BSN COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BSN"
+            Case "BDO COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BDO"
+            Case Else: SiglasCache(loja) = "DESCONHECIDA"
+        End Select
+    End If
+    ObterSiglaLoja = SiglasCache(loja)
+End Function
+
+Sub ReportarErro(procedimento As String, descricao As String)
+    Dim wsLog As Worksheet
+    On Error Resume Next
+    Set wsLog = ThisWorkbook.Sheets("Log")
+    On Error GoTo 0
+    If wsLog Is Nothing Then
+        Set wsLog = ThisWorkbook.Sheets.Add
+        wsLog.Name = "Log"
+        wsLog.Cells(1, 1).Value = "Data e Hora"
+        wsLog.Cells(1, 2).Value = "Procedimento"
+        wsLog.Cells(1, 3).Value = "Descrição do Erro"
+    End If
+    Dim ultimaLinha As Long
+    ultimaLinha = wsLog.Cells(Rows.Count, "A").End(xlUp).Row + 1
+    With wsLog
+        .Cells(ultimaLinha, 1).Value = Now
+        .Cells(ultimaLinha, 2).Value = procedimento
+        .Cells(ultimaLinha, 3).Value = descricao
+    End With
+    MsgBox descricao, vbCritical
+End Sub
+
