@@ -1,0 +1,31 @@
+Sub OrganizarTabelaPorDataEAlfabetico()
+    Dim planilha As Worksheet
+    Dim intervaloTabela As Range
+    Dim ultimaLinha As Long
+    
+    ' Desativar atualizações de tela e cálculos para melhorar o desempenho
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' Definir a planilha que contém a tabela
+    Set planilha = ThisWorkbook.Sheets("HISTORICO")
+    
+    ' Encontrar a última linha preenchida na coluna B
+    ultimaLinha = planilha.Cells(planilha.Rows.Count, "B").End(xlUp).Row
+    
+    ' Definir o intervalo da tabela dinamicamente de B14 até a última linha preenchida em L
+    Set intervaloTabela = planilha.Range("B14:L" & ultimaLinha)
+    
+    ' Organizar a tabela por data (coluna B) em ordem decrescente e, em seguida, por ordem alfabética na coluna C
+    intervaloTabela.Sort _
+        Key1:=intervaloTabela.Columns(1), Order1:=xlDescending, _
+        Key2:=intervaloTabela.Columns(2), Order2:=xlAscending, _
+        Header:=xlYes
+    
+    ' Restaurar configurações de cálculo e atualização de tela
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    
+    ' Mensagem de conclusão
+    MsgBox "Tabela organizada da mais recente para a mais antiga e por ordem alfabética!"
+End Sub
