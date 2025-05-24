@@ -1,0 +1,334 @@
+Option Explicit
+
+' Configurações Globais
+Const CAMINHO_BASE As String = "C:\Users\baumc\OneDrive\Documentos\"
+Const PASTA_CONTRATOS As String = "MARCELO\CONTRATAÇÃO\CONTRATOS\"
+Const PASTA_DESTINO As String = "MARCELO\CONTRATAÇÃO\CONTRATOS FEITOS\"
+Const NOME_PLANILHA As String = "CONTRATO"
+
+' Cache para siglas de loja
+Dim SiglasCache As Object
+
+Sub GerarContratoAtendenteEmbaixador()
+    On Error GoTo TratarErro
+    Dim ws As Worksheet
+    Dim tabela As ListObject
+    Dim wordApp As Object
+    Dim linha As ListRow
+    Dim pastaDestinoCompleta As String
+    Dim pastaOrigemBase As String
+    Dim nome As String
+    Dim cpf As String
+    Dim loja As String
+    Dim cargo As String
+    Dim idade As String
+    Dim primeiroNome As String
+    Dim destinoFuncionario As String
+    Dim arquivoContrato As String
+    Dim i As Integer
+    Dim totalLinhas As Long
+    Dim contador As Long
+    
+    pastaOrigemBase = CAMINHO_BASE & PASTA_CONTRATOS
+    pastaDestinoCompleta = CAMINHO_BASE & PASTA_DESTINO
+    If Not GarantirPasta(pastaDestinoCompleta) Then Exit Sub
+    
+    Set wordApp = StartWordApp()
+    If wordApp Is Nothing Then Exit Sub
+    
+    Set ws = ThisWorkbook.Sheets(NOME_PLANILHA)
+    Set tabela = ws.ListObjects(1)
+    totalLinhas = tabela.ListRows.Count
+    contador = 0
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    For Each linha In tabela.ListRows
+        If linha.Range(1, 6).Value Then
+            contador = contador + 1
+            Application.StatusBar = "Processando " & contador & " de " & totalLinhas & " linhas..."
+            
+            nome = linha.Range(1, 1).Value
+            cpf = linha.Range(1, 2).Value
+            cargo = UCase(linha.Range(1, 3).Value)
+            loja = linha.Range(1, 4).Value
+            idade = UCase(linha.Range(1, 5).Value)
+            
+            Dim basePath As String, cargoFolderPart As String
+            Select Case cargo
+                Case "EMBAIXADOR"
+                    basePath = "EMBAIXADOR"
+                    cargoFolderPart = "EMBAIXADOR"
+                Case "ATEND LANCHONETE (HORISTA) EXP", "ATEND LANCHONETE EXP", "ATENDENTE DE LANCHONETE (LOOPE) EXP"
+                    basePath = "ATENDENTE"
+                    cargoFolderPart = "ATENDENTE"
+                Case "TECNICO DE MANUTENÇÃO"
+                    basePath = "MANUTENÇÃO"
+                    cargoFolderPart = "MANUTENÇÃO"
+                Case Else
+                    ReportarErro "GerarContratoAtendenteEmbaixador", "Cargo não reconhecido para definição de pasta: " & cargo
+                    GoTo ProximaLinha
+            End Select
+            
+            Dim pastaPessoa As String
+            pastaPessoa = ObterPastaPessoa(loja, idade, pastaOrigemBase & basePath & "\Maior de Idade\", _
+                                          pastaOrigemBase & basePath & "\Menor de Idade\", cargoFolderPart)
+            If pastaPessoa = "" Then GoTo ProximaLinha
+            
+            primeiroNome = Split(nome, " ")(0)
+            destinoFuncionario = ConfigurarPastaDestino(loja, primeiroNome, pastaDestinoCompleta)
+            If destinoFuncionario = "" Then GoTo ProximaLinha
+            
+            Select Case cargo
+                Case "ATEND LANCHONETE (HORISTA) EXP"
+                    arquivoContrato = "1º NOV24 - CONTRATO HORISTA"
+                Case "ATEND LANCHONETE EXP"
+                    arquivoContrato = "1º NOV24 - CONTRATO MENSALISTA"
+                Case "ATENDENTE DE LANCHONETE (LOOPE) EXP"
+                    arquivoContrato = "1º NOV24 - CONTRATO MENSALISTA"
+                Case "EMBAIXADOR"
+                    arquivoContrato = "1º NOV24 - CONTRATO EMBAIXADOR"
+                Case "TECNICO DE MANUTENÇÃO"
+                    arquivoContrato = "1º NOV24 - CONTRATO MANUTENÇÃO"
+                Case Else
+                    ReportarErro "GerarContratoAtendenteEmbaixador", "Cargo não encontrado: " & cargo
+                    GoTo ProximaLinha
+            End Select
+            
+            ProcessarArquivosWord Array(arquivoContrato), destinoFuncionario, nome, cpf, wordApp, pastaPessoa
+            
+            Dim arquivos As Variant, arquivosEditar As Variant, arquivosCopiar As Variant
+            arquivos = ObterArquivosPorCargoEIdade(cargo, idade)
+            arquivosEditar = arquivos(0)
+            arquivosCopiar = arquivos(1)
+            
+            For i = LBound(arquivosEditar) To UBound(arquivosEditar)
+                ProcessarArquivosWord Array(arquivosEditar(i)), destinoFuncionario, nome, cpf, wordApp, pastaPessoa
+            Next i
+            
+            CopiarArquivos arquivosCopiar, destinoFuncionario, pastaPessoa
+            CopiarArquivos Array("2º AUTORIZAÇÃO USO DE IMAGEM", _
+                                 "3º TERMO DE AUTORIZAÇÃO holerite email", _
+                                 "5º AULA DE HIGIENE", _
+                                 "6º POLITICA MEU MÉQUI"), destinoFuncionario, pastaPessoa
+        End If
+ProximaLinha:
+    Next linha
+    
+    wordApp.Quit
+    Set wordApp = Nothing
+    Application.StatusBar = ""
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    MsgBox "Contratos gerados com sucesso! (" & contador & " processados)", vbInformation
+    Exit Sub
+
+TratarErro:
+    Dim erroMsg As String
+    Select Case Err.Number
+        Case 53: erroMsg = "Arquivo não encontrado"
+        Case 70: erroMsg = "Permissão negada"
+        Case Else: erroMsg = "Erro inesperado: " & Err.Description
+    End Select
+    ReportarErro "GerarContratoAtendenteEmbaixador", erroMsg
+    If Not wordApp Is Nothing Then wordApp.Quit: Set wordApp = Nothing
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+End Sub
+
+' Funções Auxiliares
+Function StartWordApp() As Object
+    On Error Resume Next
+    Set StartWordApp = CreateObject("Word.Application")
+    On Error GoTo 0
+    If StartWordApp Is Nothing Then
+        ReportarErro "StartWordApp", "Não foi possível iniciar o Word."
+        Exit Function
+    End If
+    StartWordApp.Visible = False
+End Function
+
+Function GarantirPasta(caminho As String) As Boolean
+    If Not FolderExists(caminho) Then
+        On Error Resume Next
+        MkDir caminho
+        If Err.Number <> 0 Then
+            ReportarErro "GarantirPasta", "Erro ao criar pasta: " & caminho
+            Exit Function
+        End If
+        On Error GoTo 0
+    End If
+    GarantirPasta = FolderExists(caminho)
+End Function
+
+Function FolderExists(pasta As String) As Boolean
+    FolderExists = (Dir(pasta, vbDirectory) <> "")
+End Function
+
+Sub ProcessarArquivosWord(arquivosWord As Variant, pastaDestino As String, nome As String, cpf As String, wordApp As Object, caminhoArquivos As String)
+    Dim wordDoc As Object
+    Dim i As Integer
+    For i = LBound(arquivosWord) To UBound(arquivosWord)
+        Dim arquivoModelo As String
+        arquivoModelo = caminhoArquivos & arquivosWord(i) & ".docx"
+        If Dir(arquivoModelo) <> "" Then
+            Set wordDoc = wordApp.Documents.Open(arquivoModelo, ReadOnly:=True)
+            SubstituirMarcadores wordDoc, nome, cpf
+            Dim nomeArquivo As String
+            nomeArquivo = pastaDestino & "\" & arquivosWord(i) & " - " & nome & ".docx"
+            wordDoc.SaveAs2 nomeArquivo
+            wordDoc.Close False
+        Else
+            ReportarErro "ProcessarArquivosWord", "Arquivo não encontrado: " & arquivoModelo
+        End If
+    Next i
+End Sub
+
+Function ObterArquivosPorCargoEIdade(cargo As String, idade As String) As Variant
+    Dim arquivosEditar As Variant
+    Dim arquivosCopiar As Variant
+    
+    ' Validação: Cargos exclusivos para maiores de idade
+    If (cargo = "ATENDENTE DE LANCHONETE (LOOPE) EXP" Or cargo = "TECNICO DE MANUTENÇÃO") And idade = "MENOR" Then
+        ReportarErro "ObterArquivosPorCargoEIdade", "O cargo '" & cargo & "' é exclusivo para maiores de idade."
+        ObterArquivosPorCargoEIdade = Array(Array(), Array())
+        Exit Function
+    End If
+    
+    If idade = "MAIOR" Then
+        arquivosEditar = Array("7º TERMO DE COMPROMISSO EPIS Crocs (Maio_2024)", _
+                               "8º TERMO DE COMPROMISSO EPIS Chicago", _
+                               "9º TERMO DE COMPROMISSO EPIS FECHAMENTO (Maio_2024)", _
+                               "10º 2x FICHA EQUIPAMENTO DE PROTEÇÃO INDIVIDUAL E UNIFORME", _
+                               "11º OPÇÃO VT Vale Transporte")
+        Select Case cargo
+            Case "EMBAIXADOR": arquivosCopiar = Array("4º OS EMBAIXADOR (MAIOR)")
+            Case "ATENDENTE DE LANCHONETE (LOOPE) EXP": arquivosCopiar = Array("4º OS (ATENDENTE LOOPE)")
+            Case "TECNICO DE MANUTENÇÃO": arquivosCopiar = Array("4º OS (TECNICO DE MANUTENÇÃO)")
+            Case Else: arquivosCopiar = Array("4º OS (ATENDENTE)")
+        End Select
+    Else
+        arquivosEditar = Array("7º TERMO DE COMPROMISSO EPIS Crocs (Maio_2024)", _
+                               "10º 2x FICHA EQUIPAMENTO DE PROTEÇÃO INDIVIDUAL E UNIFORME", _
+                               "11º OPÇÃO VT Vale Transporte")
+        Select Case cargo
+            Case "EMBAIXADOR": arquivosCopiar = Array("4º OS EMBAIXADOR (MENOR)")
+            Case Else: arquivosCopiar = Array("4º OS (ATENDENTE MENOR)")
+        End Select
+    End If
+    
+    ObterArquivosPorCargoEIdade = Array(arquivosEditar, arquivosCopiar)
+End Function
+
+Function ConfigurarPastaDestino(loja As String, primeiroNome As String, pastaBase As String) As String
+    Dim siglaLoja As String
+    siglaLoja = ObterSiglaLoja(loja)
+    If siglaLoja = "DESCONHECIDA" Then
+        ReportarErro "ConfigurarPastaDestino", "Loja desconhecida: " & loja
+        Exit Function
+    End If
+    Dim caminhoCompleto As String, baseCaminho As String, sufixo As Integer
+    baseCaminho = pastaBase & siglaLoja & " - " & primeiroNome
+    caminhoCompleto = baseCaminho
+    sufixo = 0
+    While Dir(caminhoCompleto, vbDirectory) <> ""
+        sufixo = sufixo + 1
+        caminhoCompleto = baseCaminho & " (" & sufixo & ")"
+    Wend
+    If Not GarantirPasta(caminhoCompleto) Then Exit Function
+    ConfigurarPastaDestino = caminhoCompleto
+End Function
+
+Sub SubstituirMarcadores(wordDoc As Object, nome As String, cpf As String)
+    Dim marcadores As Variant
+    Dim valores As Variant
+    Dim i As Integer
+    marcadores = Array("«NOME»", "«CPF»", "«Nome1»")
+    valores = Array(UCase(nome), cpf, Application.Proper(nome))
+    With wordDoc.Content.Find
+        .ClearFormatting
+        .Replacement.ClearFormatting
+        For i = LBound(marcadores) To UBound(marcadores)
+            .Text = marcadores(i)
+            .Replacement.Text = valores(i)
+            .Execute Replace:=2
+        Next i
+    End With
+    wordDoc.Content.Font.Color = 0
+End Sub
+
+Sub CopiarArquivos(arquivos As Variant, pastaDestino As String, pastaOrigem As String)
+    Dim arquivo As Variant
+    Dim origem As String
+    Dim destino As String
+    Dim ext As String
+    For Each arquivo In arquivos
+        ext = IIf(InStr(arquivo, "AUTORIZAÇÃO") > 0, ".docx", ".pdf")
+        origem = pastaOrigem & "\" & arquivo & ext
+        destino = pastaDestino & "\" & arquivo & " - " & Mid(pastaOrigem, InStrRev(pastaOrigem, "\") + 1) & ext
+        If Dir(origem) <> "" Then
+            On Error Resume Next
+            FileCopy origem, destino
+            If Err.Number <> 0 Then ReportarErro "CopiarArquivos", "Erro ao copiar: " & origem: Err.Clear
+            On Error GoTo 0
+        Else
+            ReportarErro "CopiarArquivos", "Arquivo não encontrado: " & origem
+        End If
+    Next arquivo
+End Sub
+
+Function ObterSiglaLoja(loja As String) As String
+    If SiglasCache Is Nothing Then Set SiglasCache = CreateObject("Scripting.Dictionary")
+    If Not SiglasCache.Exists(loja) Then
+        Select Case loja
+            Case "QSC COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAC"
+            Case "BAD COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAD"
+            Case "BAS COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAS"
+            Case "WEST SIDE COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BAU"
+            Case "BSN COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BSN"
+            Case "BDO COMÉRCIO DE ALIMENTOS LTDA": SiglasCache(loja) = "BDO"
+            Case Else: SiglasCache(loja) = "DESCONHECIDA"
+        End Select
+    End If
+    ObterSiglaLoja = SiglasCache(loja)
+End Function
+
+Function ObterPastaPessoa(loja As String, idade As String, caminhoMaior As String, caminhoMenor As String, cargoFolderPart As String) As String
+    Dim siglaLoja As String
+    siglaLoja = ObterSiglaLoja(loja)
+    If siglaLoja = "DESCONHECIDA" Then
+        ReportarErro "ObterPastaPessoa", "Loja não encontrada: " & loja
+        Exit Function
+    End If
+    If idade = "MAIOR" Then
+        ObterPastaPessoa = caminhoMaior & siglaLoja & " - " & cargoFolderPart & " MAIOR\"
+    ElseIf idade = "MENOR" Then
+        ObterPastaPessoa = caminhoMenor & siglaLoja & " - " & cargoFolderPart & " MENOR\"
+    Else
+        ReportarErro "ObterPastaPessoa", "Idade inválida: " & idade
+        Exit Function
+    End If
+End Function
+
+Sub ReportarErro(procedimento As String, descricao As String)
+    Dim wsLog As Worksheet
+    On Error Resume Next
+    Set wsLog = ThisWorkbook.Sheets("Log")
+    On Error GoTo 0
+    If wsLog Is Nothing Then
+        Set wsLog = ThisWorkbook.Sheets.Add
+        wsLog.Name = "Log"
+        wsLog.Cells(1, 1).Value = "Data e Hora"
+        wsLog.Cells(1, 2).Value = "Procedimento"
+        wsLog.Cells(1, 3).Value = "Descrição do Erro"
+    End If
+    Dim ultimaLinha As Long
+    ultimaLinha = wsLog.Cells(Rows.Count, "A").End(xlUp).Row + 1
+    With wsLog
+        .Cells(ultimaLinha, 1).Value = Now
+        .Cells(ultimaLinha, 2).Value = procedimento
+        .Cells(ultimaLinha, 3).Value = descricao
+    End With
+    MsgBox descricao, vbCritical
+End Sub
