@@ -1,0 +1,35 @@
+Sub ATUALIZAR()
+    ' Desativar atualizações de tela, cálculo automático e eventos para melhor performance
+    On Error GoTo ErrorHandler
+    
+    Dim startTime As Double
+    startTime = Timer ' Inicia a contagem do tempo de execução
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    
+    ' Atualizar todos os dados do workbook (Power Query e conexões de dados)
+    ThisWorkbook.RefreshAll
+    
+    ' Aguardar a conclusão das atualizações (opcional, dependendo do cenário)
+    DoEvents ' Libera o processamento para garantir que as atualizações sejam concluídas
+    
+ExitProcedure:
+    ' Restaurar configurações originais
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    
+    ' Exibir o tempo de execução no console (para depuração)
+    Debug.Print "Tempo de execução: " & Round(Timer - startTime, 2) & " segundos"
+    Exit Sub
+
+ErrorHandler:
+    ' Exibir detalhes do erro
+    MsgBox "Ocorreu um erro: " & Err.Description & vbCrLf & _
+           "Número do erro: " & Err.Number & vbCrLf & _
+           "Na linha: " & Erl, vbCritical, "Erro na Atualização"
+    Resume ExitProcedure
+End Sub
+
