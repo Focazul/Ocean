@@ -1,0 +1,78 @@
+Sub Exame_Novo()
+    Dim wsHistorico As Worksheet
+    Dim wsCadastroExame As Worksheet
+    Dim rngSource As Range
+    Dim rngDestination As Range
+    Dim formulaE21 As String
+    Dim formulaE22 As String
+    Dim dataValue As Variant
+    Dim i As Integer
+    
+    ' Desativar atualizações de tela e cálculos para melhorar o desempenho
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    ' Definir variáveis de planilhas
+    Set wsHistorico = ThisWorkbook.Sheets("HISTORICO")
+    Set wsCadastroExame = ThisWorkbook.Sheets("CADASTRO EXAME")
+    
+    ' Inserir nova linha no HISTORICO
+    wsHistorico.Rows(15).Insert Shift:=xlDown, CopyOrigin:=xlFormatFromLeftOrAbove
+    
+    ' Definir intervalos de origem e destino
+    Set rngSource = wsCadastroExame.Range("E13:E24")
+    Set rngDestination = wsHistorico.Range("B15")
+    
+    ' Transpor e colar valores, preservando o formato de data correto
+    For i = 1 To rngSource.Rows.Count
+        dataValue = rngSource.Cells(i, 1).Value
+        If IsDate(dataValue) Then
+            ' Forçar a interpretação correta da data no formato brasileiro (DD/MM/AAAA)
+            wsHistorico.Cells(15, i + 1).Value = DateSerial(Year(dataValue), Month(dataValue), Day(dataValue))
+        Else
+            ' Caso não seja uma data, copiar o valor diretamente
+            wsHistorico.Cells(15, i + 1).Value = dataValue
+        End If
+    Next i
+    
+    ' Aplicar formatação da linha 16 para a linha 15
+    wsHistorico.Rows(16).Copy
+    wsHistorico.Rows(15).PasteSpecial Paste:=xlPasteFormats
+    Application.CutCopyMode = False
+    
+    ' Ajustar cor da fonte para Data de Admissão (coluna D) e Matrícula (coluna L)
+    With wsHistorico.Range("D15, L15").Font
+        .Color = RGB(255, 0, 0) ' Vermelho
+    End With
+    
+    ' Ajustar cor da fonte para as outras colunas para preto
+    With wsHistorico.Range("B15:C15, E15:K15, M15").Font
+        .Color = RGB(0, 0, 0) ' Preto
+    End With
+
+    ' Ajustar o formato da data para "dd/mm/aaaa" na coluna de data (coluna D)
+    wsHistorico.Range("D15").NumberFormat = "dd/mm/yyyy"
+    
+    ' Armazenar as fórmulas presentes nas células E21 e E22
+    If Not IsEmpty(wsCadastroExame.Range("E21").Formula) Then
+        formulaE21 = wsCadastroExame.Range("E21").Formula
+    End If
+    If Not IsEmpty(wsCadastroExame.Range("E22").Formula) Then
+        formulaE22 = wsCadastroExame.Range("E22").Formula
+    End If
+    
+    ' Limpar conteúdo do CADASTRO EXAME, mantendo as fórmulas em E21 e E22
+    wsCadastroExame.Range("E13:E14, E16:E20").ClearContents
+    
+    ' Restaurar as fórmulas em E21 e E22, se houver
+    If Len(formulaE21) > 0 Then
+        wsCadastroExame.Range("E21").Formula = formulaE21
+    End If
+    If Len(formulaE22) > 0 Then
+        wsCadastroExame.Range("E22").Formula = formulaE22
+    End If
+
+    ' Restaurar configurações de cálculo e atualização de tela
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+End Sub
