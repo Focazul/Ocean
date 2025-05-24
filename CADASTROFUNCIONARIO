@@ -1,0 +1,56 @@
+Sub CADASTROFUNCIONARIO()
+    ' Desativar atualizações de tela, cálculo automático e eventos para melhorar desempenho
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+
+    On Error GoTo ErrorHandler ' Adicionar tratamento de erros
+
+    Dim wsRegistro As Worksheet
+    Dim wsCadastro As Worksheet
+    Dim dados As Variant
+    
+    ' Definir variáveis de planilhas
+    Set wsRegistro = Sheets("REGISTRO")
+    Set wsCadastro = Sheets("CADASTRO E CONSULTA")
+    
+    ' Verificar se há dados para copiar
+    dados = wsCadastro.Range("C8:C21").Value
+    If IsEmpty(dados) Or Application.CountA(dados) = 0 Then
+        MsgBox "Não há dados para copiar.", vbExclamation
+        GoTo ExitProcedure
+    End If
+    
+    ' Inserir nova linha na planilha REGISTRO
+    wsRegistro.Rows("17:17").Insert Shift:=xlDown, CopyOrigin:=xlFormatFromLeftOrAbove
+    
+    ' Copiar dados de CADASTRO E CONSULTA para REGISTRO (apenas valores)
+    With wsRegistro
+        .Range("A17").Resize(1, UBound(dados, 1)).Value = Application.Transpose(dados)
+        
+        ' Copiar formatação da linha 18 para a linha 17
+        .Rows("18:18").Copy
+        .Rows("17:17").PasteSpecial Paste:=xlPasteFormats
+    End With
+    
+    ' Limpar conteúdo em CADASTRO E CONSULTA (manter validações de dados)
+    wsCadastro.Range("C8:C21").ClearContents
+    
+    ' Limpar o modo de cópia
+    Application.CutCopyMode = False
+    
+    ' Chamar a macro de atualização após o cadastro
+    Call ATUALIZAR
+
+ExitProcedure:
+    ' Restaurar configurações de cálculo e atualização de tela
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    Exit Sub
+
+ErrorHandler:
+    ' Exibir mensagem de erro e restaurar configurações
+    MsgBox "Ocorreu um erro: " & Err.Description, vbCritical
+    Resume ExitProcedure
+End Sub
