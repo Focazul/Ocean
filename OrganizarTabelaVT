@@ -1,0 +1,35 @@
+Sub OrganizarTabelaVT()
+    Dim planilha As Worksheet
+    Dim intervaloTabela As Range
+    Dim ultimaLinha As Long
+    
+    ' Desativar atualizações de tela e cálculos para melhorar o desempenho
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' Definir a planilha que contém a tabela
+    Set planilha = ThisWorkbook.Sheets("VT")
+    
+    ' Encontrar a última linha preenchida em qualquer coluna da tabela (A a N)
+    ultimaLinha = planilha.Cells(planilha.Rows.Count, "A").End(xlUp).Row
+    ' Caso a última linha com dados esteja na coluna A, vamos considerar esse limite.
+    
+    ' Definir o intervalo da tabela dinamicamente de A15 até a última linha preenchida em N
+    Set intervaloTabela = planilha.Range("A15:N" & ultimaLinha)
+    
+    ' Organizar a tabela primeiramente pela coluna B (INICIOS) em ordem decrescente,
+    ' depois pela coluna C (LOJA) em ordem alfabética,
+    ' e finalmente pela coluna A (NOME) em ordem alfabética
+    intervaloTabela.Sort Key1:=intervaloTabela.Columns(2), Order1:=xlDescending, _
+                         Key2:=intervaloTabela.Columns(3), Order2:=xlAscending, _
+                         Key3:=intervaloTabela.Columns(1), Order3:=xlAscending, _
+                         Header:=xlYes
+    
+    ' Restaurar configurações de cálculo e atualização de tela
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    
+    ' Mensagem de conclusão
+    MsgBox "Tabela organizada por INICIOS, LOJA e NOME!"
+End Sub
+
