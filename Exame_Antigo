@@ -1,0 +1,58 @@
+Sub Exame_Antigo()
+    Dim wsHistorico As Worksheet
+    Dim wsCadastroExame As Worksheet
+    Dim rngSource As Range
+    Dim rngDestination As Range
+    Dim dataValue As Variant
+    Dim i As Integer
+    Dim formulaB21 As String
+    
+    ' Desativar atualizações de tela e cálculos para melhorar o desempenho
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' Definir variáveis de planilhas
+    Set wsHistorico = ThisWorkbook.Sheets("HISTORICO")
+    Set wsCadastroExame = ThisWorkbook.Sheets("CADASTRO EXAME")
+    
+    ' Inserir nova linha no HISTORICO, se necessário
+    If wsHistorico.Rows(15).Hidden = False Then
+        wsHistorico.Rows(15).Insert Shift:=xlDown, CopyOrigin:=xlFormatFromLeftOrAbove
+    End If
+    
+    ' Definir intervalos de origem e destino
+    Set rngSource = wsCadastroExame.Range("B13:B24")
+    Set rngDestination = wsHistorico.Range("B15")
+    
+    ' Copiar os dados da origem para o destino
+    For i = 1 To rngSource.Rows.Count
+        dataValue = rngSource.Cells(i, 1).Value
+        If IsDate(dataValue) Then
+            ' Forçar a interpretação correta da data
+            wsHistorico.Cells(15, i + 1).Value = DateSerial(Year(dataValue), Month(dataValue), Day(dataValue))
+            wsHistorico.Cells(15, i + 1).NumberFormat = "dd-mmm"
+        Else
+            wsHistorico.Cells(15, i + 1).Value = dataValue
+        End If
+    Next i
+    
+    ' Aplicar formatação da linha 16 para a linha 15
+    With wsHistorico
+        .Rows(16).Copy
+        .Rows(15).PasteSpecial Paste:=xlPasteFormats
+    End With
+    Application.CutCopyMode = False
+    
+    ' Ajustar cor da fonte para preto
+    wsHistorico.Rows(15).Font.Color = RGB(0, 0, 0)
+    
+    ' Preservar fórmula em B21
+    formulaB21 = wsCadastroExame.Range("B21").Formula ' Armazena a fórmula de B21
+    wsCadastroExame.Range("B13:B20").ClearContents
+    wsCadastroExame.Range("B23:B24").ClearContents
+    wsCadastroExame.Range("B21").Formula = formulaB21
+    
+    ' Restaurar configurações de cálculo e atualização de tela
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+End Sub
